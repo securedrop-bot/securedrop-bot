@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
+
+	"golang.org/x/oauth2"
 
 	"github.com/google/go-github/github"
 )
@@ -23,8 +26,15 @@ type Handler struct {
 
 // NewHandler creates a new Handler.
 func NewHandler(ctx context.Context) (*Handler, error) {
+	var tc *http.Client
+	if t := os.Getenv("GITHUB_ACCESS_TOKEN"); t != "" {
+		ts := oauth2.StaticTokenSource(
+			&oauth2.Token{AccessToken: t},
+		)
+		tc = oauth2.NewClient(ctx, ts)
+	}
 	return &Handler{
-		client: github.NewClient(nil),
+		client: github.NewClient(tc),
 	}, nil
 }
 
