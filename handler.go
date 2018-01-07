@@ -56,6 +56,6 @@ func (h *Handler) poll(ctx context.Context) {
 	}
 	fmt.Printf("detected %v pull requests\n", len(prs))
 	for _, pr := range prs {
-		fmt.Println(pr)
+		fmt.Println(pr.GetNumber(), pr.GetState(), pr.GetTitle(), pr.GetBody(), pr.GetUser().GetLogin())
 	}
 }
