@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,10 +11,15 @@ import (
 )
 
 func main() {
+	ctx := context.Background()
 	port := "8001"
 	if p := os.Getenv("PORT"); p != "" {
 		port = p
 	}
-	h := securedropbot.NewHandler()
+	h, err := securedropbot.NewHandler(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	go h.Poll(ctx)
 	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%v", port), h))
 }
