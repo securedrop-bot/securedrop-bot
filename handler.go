@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/oauth2"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/google/go-github/github"
 )
 
@@ -17,15 +18,19 @@ const (
 	pollInterval = time.Minute       // TODO: parameterize
 	githubOwner  = "securedrop-bot"  // TODO: parameterize?
 	githubRepo   = "securedrop-test" // TODO: parameterize?
+
+	// TODO: come up with common structured way to represent thresholds for different policies
+	policyNagSubmitterThreshold = 2 * time.Hour
 )
 
 // Handler is the main handler.
 type Handler struct {
+	logger logrus.FieldLogger
 	client *github.Client
 }
 
 // NewHandler creates a new Handler.
-func NewHandler(ctx context.Context) (*Handler, error) {
+func NewHandler(ctx context.Context, logger logrus.FieldLogger) (*Handler, error) {
 	var tc *http.Client
 	if t := os.Getenv("GITHUB_ACCESS_TOKEN"); t != "" {
 		ts := oauth2.StaticTokenSource(
@@ -34,6 +39,7 @@ func NewHandler(ctx context.Context) (*Handler, error) {
 		tc = oauth2.NewClient(ctx, ts)
 	}
 	return &Handler{
+		logger: logger,
 		client: github.NewClient(tc),
 	}, nil
 }
@@ -49,7 +55,7 @@ func (h *Handler) Poll(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			log.Println("got context done")
+			h.logger.Infoln("got context done")
 		case <-t.C:
 			h.poll(ctx)
 		}
@@ -61,7 +67,7 @@ func (h *Handler) poll(ctx context.Context) {
 	opt := &github.PullRequestListOptions{}
 	prs, _, err := h.client.PullRequests.List(ctx, githubOwner, githubRepo, opt)
 	if err != nil {
-		log.Println(err)
+		h.logger.WithError(err).Warnln("issue listing pull requests")
 		return
 	}
 	fmt.Printf("detected %v pull requests\n", len(prs))
