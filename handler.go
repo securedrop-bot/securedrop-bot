@@ -27,6 +27,8 @@ const (
 type Handler struct {
 	logger logrus.FieldLogger
 	client *github.Client
+
+	policies []Policy
 }
 
 // NewHandler creates a new Handler.
@@ -41,6 +43,9 @@ func NewHandler(ctx context.Context, logger logrus.FieldLogger) (*Handler, error
 	return &Handler{
 		logger: logger,
 		client: github.NewClient(tc),
+		policies: []Policy{
+			nagCommitAuthorsOnFailure,
+		},
 	}, nil
 }
 
