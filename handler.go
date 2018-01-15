@@ -24,6 +24,18 @@ const (
 	policyNagSubmitterThreshold = 2 * time.Hour
 )
 
+func postComment(h *Handler, ctx context.Context, pr *github.PullRequest, body string) error {
+	comment := &github.IssueComment{
+		Body: &body,
+	}
+
+	_, _, err := h.client.Issues.CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
+	if err != nil {
+		return errors.Wrap(err, "issue posting comment")
+	}
+	return nil
+}
+
 // Handler is the main handler.
 type Handler struct {
 	logger logrus.FieldLogger
@@ -101,14 +113,9 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 			logger.Infoln("would comment if not already")
 		}
 		body := fmt.Sprintf(`@%v, it looks like there was a test failure, can you please investigate?`, pr.GetUser().GetLogin())
-		comment := &github.IssueComment{
-			Body: &body,
-		}
+
 		// TODO: this needs to not post if it's already happened.
-		_, _, err = h.client.Issues.CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
-		if err != nil {
-			return errors.Wrap(err, "issue posting comment")
-		}
+		postComment(h, ctx, pr, body)
 	}
 	return nil
 }
