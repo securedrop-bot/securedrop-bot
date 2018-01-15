@@ -109,7 +109,7 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 		body := fmt.Sprintf(`@%v, it looks like there was a test failure, can you please investigate?`, pr.GetUser().GetLogin())
 
 		// TODO: this needs to not post if it's already happened.
-		h.postComment(ctx, pr, body)
+		return h.postComment(ctx, pr, body)
 	}
 	return nil
 }
@@ -186,8 +186,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
 		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
 		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
-		h.postComment(ctx, pr, body)
-		return nil
+		return h.postComment(ctx, pr, body)
 	}
 
 	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
@@ -197,8 +196,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 
 	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
 	body := fmt.Sprintf("%vcan you review this PR when you get a chance?", reviewerString)
-	h.postComment(ctx, pr, body)
-	return nil
+	return h.postComment(ctx, pr, body)
 }
 
 func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body string) error {
