@@ -165,7 +165,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	}
 
 	// Since reviews can be submitted by those that are not maintainers
-	lastTimeReviewWasDoneByMaintainer := time.Now()
+	lastTimeReviewWasDoneByMaintainer := time.Time{}
 	// var last_reviewer string
 	for _, review := range reviews {
 		// last_reviewer = *review.User.Login
@@ -174,8 +174,8 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	}
 
 	// Go through comments and store the following
-	lastTimeBotCommented := time.Now()
-	lastTimeSubmitterCommented := time.Now()
+	lastTimeBotCommented := time.Time{}
+	lastTimeSubmitterCommented := time.Time{}
 	// var last_comment_author string = "No comments"
 
 	// There should be a better way to do this. comments welcome
@@ -191,23 +191,23 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	}
 
 	if time.Since(lastTimeReviewWasDoneByMaintainer) < policyNagReviewerThreshold {
-		// The reviewer has recently submitted a review. Don't post again
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Reviewer has recently submitted a review. Don't post again.")
 		return nil
 	}
 
 	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
-		// The bot has recently posted. Don't post again
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
 		return nil
 	}
 
-	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold {
-		// Then let's ping the submitter since the ball is in their court
+	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
 		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
 		postComment(h, ctx, pr, body)
 		return nil
 	}
 
-	// If we got here, then we can remind the reviewer.
+	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
 	body := fmt.Sprintf("%vcan you review this PR when you get a chance?", reviewerString)
 	postComment(h, ctx, pr, body)
 	return nil
