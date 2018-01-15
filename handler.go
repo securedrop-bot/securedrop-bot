@@ -12,6 +12,7 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/google/go-github/github"
+	"github.com/pkg/errors"
 )
 
 const (
@@ -72,6 +73,42 @@ func (h *Handler) poll(ctx context.Context) {
 	}
 	fmt.Printf("detected %v pull requests\n", len(prs))
 	for _, pr := range prs {
-		fmt.Println(pr.GetNumber(), pr.GetState(), pr.GetTitle(), pr.GetBody(), pr.GetUser().GetLogin())
+		if err := h.nagSubmitterIfFailed(ctx, pr); err != nil {
+			h.logger.WithError(err).WithField("policy", "nagSubmitterIfFailed").Warnln("encountered error")
+		}
 	}
+}
+
+func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullRequest) error {
+	logger := h.logger.WithField("policy", "nagSubmitterIfFailed")
+	logger.Debugln(pr.GetNumber(), pr.GetState(), pr.GetTitle(), pr.GetBody(), pr.GetUser().GetLogin(), pr.GetStatusesURL())
+
+	statuses, _, err := h.client.Repositories.GetCombinedStatus(ctx, githubOwner, githubRepo, pr.GetHead().GetSHA(), nil)
+	if err != nil {
+		return errors.Wrap(err, "issue getting status")
+	}
+	if statuses.GetState() != "failure" {
+		logger.WithField("state", statuses.GetState()).Debugln("skipping status")
+		return nil
+	}
+	for _, s := range statuses.Statuses {
+		if s.GetState() != "failure" {
+			continue
+		}
+		since := time.Since(s.GetCreatedAt())
+		logger.Infoln("created ago:", since)
+		if since > policyNagSubmitterThreshold {
+			logger.Infoln("would comment if not already")
+		}
+		body := fmt.Sprintf(`@%v, it looks like there was a test failure, can you please investigate?`, pr.GetUser().GetLogin())
+		comment := &github.IssueComment{
+			Body: &body,
+		}
+		// TODO: this needs to not post if it's already happened.
+		_, _, err = h.client.Issues.CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
+		if err != nil {
+			return errors.Wrap(err, "issue posting comment")
+		}
+	}
+	return nil
 }
