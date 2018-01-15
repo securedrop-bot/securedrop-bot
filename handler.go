@@ -25,6 +25,7 @@ const (
 	policyNagSubmitterThreshold               = 2 * time.Hour
 	policyNagReviewerThreshold                = 48 * time.Hour
 	policyNagSubmitterReviewCommentsThreshold = 48 * time.Hour
+	policyNagMaintainerToMergeThreshold       = 12 * time.Hour
 )
 
 // Handler is the main handler.
@@ -82,6 +83,9 @@ func (h *Handler) poll(ctx context.Context) {
 		if err := h.nagReviewerIfSlow(ctx, pr); err != nil {
 			h.logger.WithError(err).WithField("policy", "nagReviewerIfSlow").Warnln("encountered error")
 		}
+		if err := h.nagMaintainerForMerge(ctx, pr); err != nil {
+			h.logger.WithError(err).WithField("policy", "nagMaintainerForMerge").Warnln("encountered error")
+		}
 	}
 }
 
@@ -114,6 +118,29 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 	return nil
 }
 
+func (h *Handler) nagMaintainerForMerge(ctx context.Context, pr *github.PullRequest) error {
+	reviews, _ := h.getReviews(ctx, pr)
+
+	prWasApproved := false
+	lastReviewer := ""
+	var lastTimeReviewWasDoneByMaintainer time.Time
+	for _, review := range reviews {
+		if *review.State != "APPROVED" {
+			return nil
+		}
+		prWasApproved = true
+		lastReviewer = *review.User.Login
+		lastTimeReviewWasDoneByMaintainer = *review.SubmittedAt
+	}
+
+	body := fmt.Sprintf("@%v, can we merge this PR?", lastReviewer)
+
+	if prWasApproved && time.Since(lastTimeReviewWasDoneByMaintainer) > policyNagMaintainerToMergeThreshold {
+		return h.postComment(ctx, pr, body)
+	}
+	return nil
+}
+
 func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest) error {
 	logger := h.logger.WithField("policy", "nagReviewerIfSlow")
 	since := time.Since(pr.GetCreatedAt())
@@ -139,12 +166,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return errors.Wrap(err, "issue getting PR comments")
 	}
 
-	// Get reviews that have been done on a PR.
-	reviews, _, err := h.client.GetPullRequestsService().ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
-	if err != nil {
-		return errors.Wrap(err, "issue getting PR reviews")
-	}
-
+	reviews, err := h.getReviews(ctx, pr)
 	reviewerString := ""
 	for _, reviewer := range reviewers.Users {
 		reviewerString += "@"
@@ -209,4 +231,13 @@ func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body 
 		return errors.Wrap(err, "issue posting comment")
 	}
 	return nil
+}
+
+func (h *Handler) getReviews(ctx context.Context, pr *github.PullRequest) ([]*github.PullRequestReview, error) {
+	opt := &github.ListOptions{}
+	reviews, _, err := h.client.GetPullRequestsService().ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt)
+	if err != nil {
+		return reviews, errors.Wrap(err, "issue getting reviews")
+	}
+	return reviews, nil
 }
