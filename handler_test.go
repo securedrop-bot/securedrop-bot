@@ -10,18 +10,20 @@ import (
 
 var failureStatus = "failure"
 
+var failureCombinedStatus = &github.CombinedStatus{
+	State: &failureStatus,
+	Statuses: []github.RepoStatus{
+		github.RepoStatus{
+			State: &failureStatus,
+		},
+	},
+}
+
 // mocks
 var (
 	failingStatusRepository = &repositoriesServiceMock{
 		GetCombinedStatusFunc: func(in1 context.Context, in2 string, in3 string, in4 string, in5 *github.ListOptions) (*github.CombinedStatus, *github.Response, error) {
-			return &github.CombinedStatus{
-				State: &failureStatus,
-				Statuses: []github.RepoStatus{
-					github.RepoStatus{
-						State: &failureStatus,
-					},
-				},
-			}, nil, nil
+			return failureCombinedStatus, nil, nil
 		},
 	}
 )
