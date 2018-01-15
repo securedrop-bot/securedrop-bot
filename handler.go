@@ -27,18 +27,6 @@ const (
 	policyNagSubmitterReviewCommentsThreshold = 48 * time.Hour
 )
 
-func postComment(h *Handler, ctx context.Context, pr *github.PullRequest, body string) error {
-	comment := &github.IssueComment{
-		Body: &body,
-	}
-
-	_, _, err := h.client.GetIssuesService().CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
-	if err != nil {
-		return errors.Wrap(err, "issue posting comment")
-	}
-	return nil
-}
-
 // Handler is the main handler.
 type Handler struct {
 	logger logrus.FieldLogger
@@ -121,7 +109,7 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 		body := fmt.Sprintf(`@%v, it looks like there was a test failure, can you please investigate?`, pr.GetUser().GetLogin())
 
 		// TODO: this needs to not post if it's already happened.
-		postComment(h, ctx, pr, body)
+		return h.postComment(ctx, pr, body)
 	}
 	return nil
 }
@@ -138,7 +126,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 
 	// Get requested reviewers for PR
 	opt3 := &github.ListOptions{}
-	reviewers, _, err := h.client.PullRequests.ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	reviewers, _, err := h.client.GetPullRequestsService().ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
 	if err != nil {
 		return errors.Wrap(err, "issue getting PR reviewers")
 	}
@@ -146,13 +134,13 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	// Get comments on the PR. From GitHub API docs:
 	// "Comments on pull requests can be managed via the Issue Comments API."
 	opt2 := &github.IssueListCommentsOptions{}
-	comments, _, err := h.client.Issues.ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), opt2)
+	comments, _, err := h.client.GetIssuesService().ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), opt2)
 	if err != nil {
 		return errors.Wrap(err, "issue getting PR comments")
 	}
 
 	// Get reviews that have been done on a PR.
-	reviews, _, err := h.client.PullRequests.ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	reviews, _, err := h.client.GetPullRequestsService().ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
 	if err != nil {
 		return errors.Wrap(err, "issue getting PR reviews")
 	}
@@ -198,8 +186,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
 		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
 		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
-		postComment(h, ctx, pr, body)
-		return nil
+		return h.postComment(ctx, pr, body)
 	}
 
 	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
@@ -209,6 +196,17 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 
 	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
 	body := fmt.Sprintf("%vcan you review this PR when you get a chance?", reviewerString)
-	postComment(h, ctx, pr, body)
+	return h.postComment(ctx, pr, body)
+}
+
+func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body string) error {
+	comment := &github.IssueComment{
+		Body: &body,
+	}
+
+	_, _, err := h.client.GetIssuesService().CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
+	if err != nil {
+		return errors.Wrap(err, "issue posting comment")
+	}
 	return nil
 }
