@@ -97,18 +97,29 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 		logger.WithField("state", statuses.GetState()).Debugln("skipping status")
 		return nil
 	}
+	var sinceLastFailure time.Duration
 	for _, s := range statuses.Statuses {
 		if s.GetState() != "failure" {
 			continue
 		}
-		since := time.Since(s.GetCreatedAt())
-		logger.Infoln("created ago:", since)
-		if since > policyNagSubmitterThreshold {
-			logger.Infoln("would comment if not already")
+		sinceLastFailure = time.Since(s.GetCreatedAt())
+		break
+	}
+	comments, _, err := h.client.GetIssuesService().ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), nil)
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR comments")
+	}
+
+	lastTimeBotCommented := time.Time{}
+	for _, comment := range comments {
+		commentUser := *comment.User.Login
+		if commentUser == botUsername {
+			lastTimeBotCommented = *comment.CreatedAt
 		}
+	}
+	if sinceLastFailure > policyNagSubmitterThreshold && lastTimeBotCommented.IsZero() {
 		body := fmt.Sprintf(`@%v, it looks like there was a test failure, can you please investigate?`, pr.GetUser().GetLogin())
 
-		// TODO: this needs to not post if it's already happened.
 		return h.postComment(ctx, pr, body)
 	}
 	return nil
