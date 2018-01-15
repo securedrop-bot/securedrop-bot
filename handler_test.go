@@ -53,13 +53,9 @@ var (
 )
 
 // mocks
-var (
-	failingStatusRepository = &repositoriesServiceMock{
-		GetCombinedStatusFunc: func(in1 context.Context, in2 string, in3 string, in4 string, in5 *github.ListOptions) (*github.CombinedStatus, *github.Response, error) {
-			return failureCombinedStatus, nil, nil
-		},
-	}
-	noRecentComments = &issuesServiceMock{
+
+func noRecentComments() *issuesServiceMock {
+	return &issuesServiceMock{
 		CreateCommentFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.IssueComment) (*github.IssueComment, *github.Response, error) {
 			return nil, nil, nil
 		},
@@ -67,7 +63,17 @@ var (
 			return []*github.IssueComment{}, nil, nil
 		},
 	}
-	botRecentlyCommentedIssues = &issuesServiceMock{
+}
+
+func failingStatusRepository() *repositoriesServiceMock {
+	return &repositoriesServiceMock{
+		GetCombinedStatusFunc: func(in1 context.Context, in2 string, in3 string, in4 string, in5 *github.ListOptions) (*github.CombinedStatus, *github.Response, error) {
+			return failureCombinedStatus, nil, nil
+		},
+	}
+}
+func botRecentlyCommentedIssues() *issuesServiceMock {
+	return &issuesServiceMock{
 		CreateCommentFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.IssueComment) (*github.IssueComment, *github.Response, error) {
 			return nil, nil, nil
 		},
@@ -75,17 +81,21 @@ var (
 			return recentBotComments, nil, nil
 		},
 	}
-	prIsApproved = &pullRequestsServiceMock{
+}
+func prIsApproved() *pullRequestsServiceMock {
+	return &pullRequestsServiceMock{
 		ListReviewsFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
 			return approvedReviews, nil, nil
 		},
 	}
-	prIsNotApproved = &pullRequestsServiceMock{
+}
+func prIsNotApproved() *pullRequestsServiceMock {
+	return &pullRequestsServiceMock{
 		ListReviewsFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
 			return []*github.PullRequestReview{}, nil, nil
 		},
 	}
-)
+}
 
 func TestHandler_nagSubmitterIfFailed(t *testing.T) {
 	logger := logrus.New()
@@ -106,14 +116,14 @@ func TestHandler_nagSubmitterIfFailed(t *testing.T) {
 		wantErr   bool
 	}{
 		{"failing-status", &fakeGithubClient{
-			repositories: failingStatusRepository,
+			repositories: failingStatusRepository(),
 			pullRequests: &pullRequestsServiceMock{},
-			issues:       noRecentComments,
+			issues:       noRecentComments(),
 		}, args{ctx: ctx}, 1, false},
 		{"failing-status-with-comment-present", &fakeGithubClient{
-			repositories: failingStatusRepository,
+			repositories: failingStatusRepository(),
 			pullRequests: &pullRequestsServiceMock{},
-			issues:       botRecentlyCommentedIssues,
+			issues:       botRecentlyCommentedIssues(),
 		}, args{ctx: ctx}, 0, false},
 	}
 	for _, tt := range tests {
@@ -152,18 +162,18 @@ func TestHandler_nagMaintainerForMerge(t *testing.T) {
 		wantErr   bool
 	}{
 		{"pr-is-not-approved", &fakeGithubClient{
-			repositories: failingStatusRepository,
-			pullRequests: prIsNotApproved,
-			issues:       noRecentComments,
+			repositories: failingStatusRepository(),
+			pullRequests: prIsNotApproved(),
+			issues:       noRecentComments(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
 		{"pr-is-approved-no-comments", &fakeGithubClient{
-			pullRequests: prIsApproved,
-			issues:       noRecentComments,
+			pullRequests: prIsApproved(),
+			issues:       noRecentComments(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 1, false},
 		{"pr-is-approved-bot-already-commented", &fakeGithubClient{
-			repositories: failingStatusRepository,
-			pullRequests: prIsApproved,
-			issues:       botRecentlyCommentedIssues,
+			repositories: failingStatusRepository(),
+			pullRequests: prIsApproved(),
+			issues:       botRecentlyCommentedIssues(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
 	}
 	for _, tt := range tests {
