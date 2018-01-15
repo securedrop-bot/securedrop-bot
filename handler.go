@@ -32,7 +32,7 @@ func postComment(h *Handler, ctx context.Context, pr *github.PullRequest, body s
 		Body: &body,
 	}
 
-	_, _, err := h.client.Issues.CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
+	_, _, err := h.client.GetIssuesService().CreateComment(ctx, githubOwner, githubRepo, pr.GetNumber(), comment)
 	if err != nil {
 		return errors.Wrap(err, "issue posting comment")
 	}
@@ -42,7 +42,7 @@ func postComment(h *Handler, ctx context.Context, pr *github.PullRequest, body s
 // Handler is the main handler.
 type Handler struct {
 	logger logrus.FieldLogger
-	client *github.Client
+	client githubClient
 }
 
 // NewHandler creates a new Handler.
@@ -56,7 +56,7 @@ func NewHandler(ctx context.Context, logger logrus.FieldLogger) (*Handler, error
 	}
 	return &Handler{
 		logger: logger,
-		client: github.NewClient(tc),
+		client: &realGithubClient{github.NewClient(tc)},
 	}, nil
 }
 
@@ -81,7 +81,7 @@ func (h *Handler) Poll(ctx context.Context) {
 func (h *Handler) poll(ctx context.Context) {
 	log.Println("poll")
 	opt := &github.PullRequestListOptions{}
-	prs, _, err := h.client.PullRequests.List(ctx, githubOwner, githubRepo, opt)
+	prs, _, err := h.client.GetPullRequestsService().List(ctx, githubOwner, githubRepo, opt)
 	if err != nil {
 		h.logger.WithError(err).Warnln("issue listing pull requests")
 		return
@@ -101,7 +101,7 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 	logger := h.logger.WithField("policy", "nagSubmitterIfFailed")
 	logger.Debugln(pr.GetNumber(), pr.GetState(), pr.GetTitle(), pr.GetBody(), pr.GetUser().GetLogin(), pr.GetStatusesURL())
 
-	statuses, _, err := h.client.Repositories.GetCombinedStatus(ctx, githubOwner, githubRepo, pr.GetHead().GetSHA(), nil)
+	statuses, _, err := h.client.GetRepositoriesService().GetCombinedStatus(ctx, githubOwner, githubRepo, pr.GetHead().GetSHA(), nil)
 	if err != nil {
 		return errors.Wrap(err, "issue getting status")
 	}
