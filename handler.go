@@ -19,9 +19,12 @@ const (
 	pollInterval = time.Minute       // TODO: parameterize
 	githubOwner  = "securedrop-bot"  // TODO: parameterize?
 	githubRepo   = "securedrop-test" // TODO: parameterize?
+	botUsername  = "securedrop-bot"  // yes also parameterize me too
 
 	// TODO: come up with common structured way to represent thresholds for different policies
-	policyNagSubmitterThreshold = 2 * time.Hour
+	policyNagSubmitterThreshold               = 2 * time.Hour
+	policyNagReviewerThreshold                = 48 * time.Hour
+	policyNagSubmitterReviewCommentsThreshold = 48 * time.Hour
 )
 
 func postComment(h *Handler, ctx context.Context, pr *github.PullRequest, body string) error {
@@ -88,6 +91,9 @@ func (h *Handler) poll(ctx context.Context) {
 		if err := h.nagSubmitterIfFailed(ctx, pr); err != nil {
 			h.logger.WithError(err).WithField("policy", "nagSubmitterIfFailed").Warnln("encountered error")
 		}
+		if err := h.nagReviewerIfSlow(ctx, pr); err != nil {
+			h.logger.WithError(err).WithField("policy", "nagReviewerIfSlow").Warnln("encountered error")
+		}
 	}
 }
 
@@ -117,5 +123,92 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 		// TODO: this needs to not post if it's already happened.
 		postComment(h, ctx, pr, body)
 	}
+	return nil
+}
+
+func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest) error {
+	logger := h.logger.WithField("policy", "nagReviewerIfSlow")
+	since := time.Since(pr.GetCreatedAt())
+
+	// If PR has just been filed, we do not comment
+	if since < policyNagReviewerThreshold {
+		logger.Infoln("PR is too new, bailing")
+		return nil
+	}
+
+	// Get requested reviewers for PR
+	opt3 := &github.ListOptions{}
+	reviewers, _, err := h.client.PullRequests.ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR reviewers")
+	}
+
+	// Get comments on the PR. From GitHub API docs:
+	// "Comments on pull requests can be managed via the Issue Comments API."
+	opt2 := &github.IssueListCommentsOptions{}
+	comments, _, err := h.client.Issues.ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), opt2)
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR comments")
+	}
+
+	// Get reviews that have been done on a PR.
+	reviews, _, err := h.client.PullRequests.ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR reviews")
+	}
+
+	reviewerString := ""
+	for _, reviewer := range reviewers.Users {
+		reviewerString += "@"
+		reviewerString += *reviewer.Login
+		reviewerString += ", "
+	}
+
+	// Since reviews can be submitted by those that are not maintainers
+	lastTimeReviewWasDoneByMaintainer := time.Time{}
+	// var last_reviewer string
+	for _, review := range reviews {
+		// last_reviewer = *review.User.Login
+		// TODO: prolly should explicitly check if the review was by a maintainer..?
+		lastTimeReviewWasDoneByMaintainer = *review.SubmittedAt
+	}
+
+	// Go through comments and store the following
+	lastTimeBotCommented := time.Time{}
+	lastTimeSubmitterCommented := time.Time{}
+	// var last_comment_author string = "No comments"
+
+	// There should be a better way to do this. comments welcome
+	for _, comment := range comments {
+		commentUser := *comment.User.Login
+		if commentUser == botUsername {
+			lastTimeBotCommented = *comment.CreatedAt
+		}
+		if commentUser == *pr.User.Login {
+			lastTimeSubmitterCommented = *comment.CreatedAt
+		}
+		// last_comment_author = comment_user
+	}
+
+	if time.Since(lastTimeReviewWasDoneByMaintainer) < policyNagReviewerThreshold {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Reviewer has recently submitted a review. Don't post again.")
+		return nil
+	}
+
+	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
+		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
+		postComment(h, ctx, pr, body)
+		return nil
+	}
+
+	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
+		return nil
+	}
+
+	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
+	body := fmt.Sprintf("%vcan you review this PR when you get a chance?", reviewerString)
+	postComment(h, ctx, pr, body)
 	return nil
 }
