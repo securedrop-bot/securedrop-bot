@@ -10,13 +10,14 @@ import (
 )
 
 var (
-	failureStatus   = "failure"
-	botLogin        = "securedrop-bot"
-	fiveMinutesAgo  = time.Now().Add(-5 * time.Minute)
-	threeDaysAgo    = time.Now().Add(-72 * time.Hour)
-	approvedStatus  = "APPROVED"
-	genericPRNumber = 1
-	userLogin       = "tmc"
+	failureStatus       = "failure"
+	botLogin            = "securedrop-bot"
+	fiveMinutesAgo      = time.Now().Add(-5 * time.Minute)
+	threeDaysAgo        = time.Now().Add(-72 * time.Hour)
+	approvedStatus      = "APPROVED"
+	requestChangeStatus = "CHANGES_REQUESTED"
+	genericPRNumber     = 1
+	userLogin           = "redshiftzero"
 )
 
 var (
@@ -43,6 +44,13 @@ var (
 	approvedReviews = []*github.PullRequestReview{
 		&github.PullRequestReview{
 			State:       &approvedStatus,
+			User:        reviewerUser,
+			SubmittedAt: &threeDaysAgo,
+		},
+	}
+	changesRequestedReviews = []*github.PullRequestReview{
+		&github.PullRequestReview{
+			State:       &requestChangeStatus,
 			User:        reviewerUser,
 			SubmittedAt: &threeDaysAgo,
 		},
@@ -92,7 +100,7 @@ func prIsApproved() *pullRequestsServiceMock {
 func prIsNotApproved() *pullRequestsServiceMock {
 	return &pullRequestsServiceMock{
 		ListReviewsFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
-			return []*github.PullRequestReview{}, nil, nil
+			return changesRequestedReviews, nil, nil
 		},
 	}
 }
@@ -162,7 +170,6 @@ func TestHandler_nagMaintainerForMerge(t *testing.T) {
 		wantErr   bool
 	}{
 		{"pr-is-not-approved", &fakeGithubClient{
-			repositories: failingStatusRepository(),
 			pullRequests: prIsNotApproved(),
 			issues:       noRecentComments(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
@@ -171,7 +178,6 @@ func TestHandler_nagMaintainerForMerge(t *testing.T) {
 			issues:       noRecentComments(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 1, false},
 		{"pr-is-approved-bot-already-commented", &fakeGithubClient{
-			repositories: failingStatusRepository(),
 			pullRequests: prIsApproved(),
 			issues:       botRecentlyCommentedIssues(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
