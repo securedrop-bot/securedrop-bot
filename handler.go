@@ -131,19 +131,27 @@ func (h *Handler) nagMaintainerForMerge(ctx context.Context, pr *github.PullRequ
 
 	prWasApproved := false
 	lastReviewer := ""
-	var lastTimeReviewWasDoneByMaintainer time.Time
 	for _, review := range reviews {
 		if *review.State != "APPROVED" {
 			return nil
 		}
 		prWasApproved = true
 		lastReviewer = *review.User.Login
-		lastTimeReviewWasDoneByMaintainer = *review.SubmittedAt
+	}
+
+	comments, _ := h.getComments(ctx, pr)
+
+	lastTimeBotCommented := time.Time{}
+	for _, comment := range comments {
+		commentUser := *comment.User.Login
+		if commentUser == botUsername {
+			lastTimeBotCommented = *comment.CreatedAt
+		}
 	}
 
 	body := fmt.Sprintf("@%v, can we merge this PR?", lastReviewer)
 
-	if prWasApproved && time.Since(lastTimeReviewWasDoneByMaintainer) > policyNagMaintainerToMergeThreshold {
+	if prWasApproved && time.Since(lastTimeBotCommented) > policyNagMaintainerToMergeThreshold {
 		return h.postComment(ctx, pr, body)
 	}
 	return nil
