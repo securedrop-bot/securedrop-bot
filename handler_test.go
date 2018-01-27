@@ -58,6 +58,10 @@ var (
 	genericPullRequest = &github.PullRequest{
 		Number: &genericPRNumber,
 	}
+	recentPullRequest = &github.PullRequest{
+		Number:    &genericPRNumber,
+		CreatedAt: &fiveMinutesAgo,
+	}
 )
 
 // mocks
@@ -194,6 +198,46 @@ func TestHandler_nagMaintainerForMerge(t *testing.T) {
 			got := len(tt.client.issues.calls.CreateComment)
 			if got != tt.nComments {
 				t.Errorf("Handler.nagMaintainerForMerge, got %d comments; want %d", got, tt.nComments)
+			}
+		})
+	}
+}
+
+func TestHandler_nagReviewerIfSlow(t *testing.T) {
+	logger := logrus.New()
+	if testing.Verbose() {
+		logger.SetLevel(logrus.DebugLevel)
+	}
+
+	ctx := context.Background()
+	type args struct {
+		ctx context.Context
+		pr  *github.PullRequest
+	}
+	tests := []struct {
+		name      string
+		client    *fakeGithubClient
+		args      args
+		nComments int // how many comments we expect to be posted
+		wantErr   bool
+	}{
+		{"pr-is-too-new", &fakeGithubClient{
+			pullRequests: prIsNotApproved(),
+			issues:       noRecentComments(),
+		}, args{ctx: ctx, pr: recentPullRequest}, 0, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &Handler{
+				logger: logger,
+				client: tt.client,
+			}
+			if err := h.nagReviewerIfSlow(tt.args.ctx, tt.args.pr); (err != nil) != tt.wantErr {
+				t.Errorf("Handler.nagReviewerIfSlow() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			got := len(tt.client.issues.calls.CreateComment)
+			if got != tt.nComments {
+				t.Errorf("Handler.nagReviewerIfSlow, got %d comments; want %d", got, tt.nComments)
 			}
 		})
 	}
