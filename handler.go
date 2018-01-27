@@ -15,11 +15,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	githubOwner = getEnv("SDBOT_REPO_OWNER", "securedrop-bot")
+	githubRepo  = getEnv("SDBOT_REPO_NAME", "securedrop-test")
+	botUsername = getEnv("SDBOT_USERNAME", "securedrop-bot")
+)
+
 const (
-	pollInterval = time.Minute       // TODO: parameterize
-	githubOwner  = "securedrop-bot"  // TODO: parameterize?
-	githubRepo   = "securedrop-test" // TODO: parameterize?
-	botUsername  = "securedrop-bot"  // yes also parameterize me too
+	pollInterval = time.Minute // TODO: parameterize
 
 	// TODO: come up with common structured way to represent thresholds for different policies
 	policyNagSubmitterThreshold               = 2 * time.Hour
@@ -267,4 +270,11 @@ func (h *Handler) getComments(ctx context.Context, pr *github.PullRequest) ([]*g
 		return comments, errors.Wrap(err, "issue getting PR comments")
 	}
 	return comments, nil
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
