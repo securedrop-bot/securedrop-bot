@@ -109,7 +109,7 @@ func (h *Handler) nagSubmitterIfFailed(ctx context.Context, pr *github.PullReque
 		sinceLastFailure = time.Since(s.GetCreatedAt())
 		break
 	}
-	comments, _, err := h.client.GetIssuesService().ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), nil)
+	comments, err := h.getComments(ctx, pr)
 	if err != nil {
 		return errors.Wrap(err, "issue getting PR comments")
 	}
@@ -134,19 +134,30 @@ func (h *Handler) nagMaintainerForMerge(ctx context.Context, pr *github.PullRequ
 
 	prWasApproved := false
 	lastReviewer := ""
-	var lastTimeReviewWasDoneByMaintainer time.Time
 	for _, review := range reviews {
 		if *review.State != "APPROVED" {
 			return nil
 		}
 		prWasApproved = true
 		lastReviewer = *review.User.Login
-		lastTimeReviewWasDoneByMaintainer = *review.SubmittedAt
+	}
+
+	comments, err := h.getComments(ctx, pr)
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR comments")
+	}
+
+	lastTimeBotCommented := time.Time{}
+	for _, comment := range comments {
+		commentUser := *comment.User.Login
+		if commentUser == botUsername {
+			lastTimeBotCommented = *comment.CreatedAt
+		}
 	}
 
 	body := fmt.Sprintf("@%v, can we merge this PR?", lastReviewer)
 
-	if prWasApproved && time.Since(lastTimeReviewWasDoneByMaintainer) > policyNagMaintainerToMergeThreshold {
+	if prWasApproved && time.Since(lastTimeBotCommented) > policyNagMaintainerToMergeThreshold {
 		return h.postComment(ctx, pr, body)
 	}
 	return nil
@@ -169,14 +180,6 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return errors.Wrap(err, "issue getting PR reviewers")
 	}
 
-	// Get comments on the PR. From GitHub API docs:
-	// "Comments on pull requests can be managed via the Issue Comments API."
-	opt2 := &github.IssueListCommentsOptions{}
-	comments, _, err := h.client.GetIssuesService().ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), opt2)
-	if err != nil {
-		return errors.Wrap(err, "issue getting PR comments")
-	}
-
 	reviews, err := h.getReviews(ctx, pr)
 	reviewerString := ""
 	for _, reviewer := range reviewers.Users {
@@ -194,7 +197,10 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		lastTimeReviewWasDoneByMaintainer = *review.SubmittedAt
 	}
 
-	// Go through comments and store the following
+	comments, err := h.getComments(ctx, pr) // Go through comments and store the following
+	if err != nil {
+		return errors.Wrap(err, "issue getting PR comments")
+	}
 	lastTimeBotCommented := time.Time{}
 	lastTimeSubmitterCommented := time.Time{}
 	// var last_comment_author string = "No comments"
@@ -251,4 +257,14 @@ func (h *Handler) getReviews(ctx context.Context, pr *github.PullRequest) ([]*gi
 		return reviews, errors.Wrap(err, "issue getting reviews")
 	}
 	return reviews, nil
+}
+
+// Get comments on the PR. From GitHub API docs:
+// "Comments on pull requests can be managed via the Issue Comments API."
+func (h *Handler) getComments(ctx context.Context, pr *github.PullRequest) ([]*github.IssueComment, error) {
+	comments, _, err := h.client.GetIssuesService().ListComments(ctx, githubOwner, githubRepo, pr.GetNumber(), nil)
+	if err != nil {
+		return comments, errors.Wrap(err, "issue getting PR comments")
+	}
+	return comments, nil
 }
