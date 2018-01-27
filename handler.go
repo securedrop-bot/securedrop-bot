@@ -176,14 +176,15 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return nil
 	}
 
-	// Get requested reviewers for PR
-	opt3 := &github.ListOptions{}
-	reviewers, _, err := h.client.GetPullRequestsService().ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	reviewers, err := h.getReviewers(ctx, pr)
 	if err != nil {
-		return errors.Wrap(err, "issue getting PR reviewers")
+		return errors.Wrap(err, "issue getting reviewers")
 	}
 
 	reviews, err := h.getReviews(ctx, pr)
+	if err != nil {
+		return errors.Wrap(err, "issue getting reviews")
+	}
 	reviewerString := ""
 	for _, reviewer := range reviewers.Users {
 		reviewerString += "@"
@@ -241,6 +242,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	return h.postComment(ctx, pr, body)
 }
 
+// Post a comment on the PR.
 func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body string) error {
 	comment := &github.IssueComment{
 		Body: &body,
@@ -253,6 +255,7 @@ func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body 
 	return nil
 }
 
+// Get reviews on the PR.
 func (h *Handler) getReviews(ctx context.Context, pr *github.PullRequest) ([]*github.PullRequestReview, error) {
 	opt := &github.ListOptions{}
 	reviews, _, err := h.client.GetPullRequestsService().ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt)
@@ -270,6 +273,16 @@ func (h *Handler) getComments(ctx context.Context, pr *github.PullRequest) ([]*g
 		return comments, errors.Wrap(err, "issue getting PR comments")
 	}
 	return comments, nil
+}
+
+// Get requested reviewers on the PR.
+func (h *Handler) getReviewers(ctx context.Context, pr *github.PullRequest) (*github.Reviewers, error) {
+	opt := &github.ListOptions{}
+	reviewers, _, err := h.client.GetPullRequestsService().ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt)
+	if err != nil {
+		return reviewers, errors.Wrap(err, "issue getting PR reviewers")
+	}
+	return reviewers, nil
 }
 
 func getEnv(key, fallback string) string {
