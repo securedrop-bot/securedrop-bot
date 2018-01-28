@@ -226,15 +226,15 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return nil
 	}
 
+	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
+		return nil
+	}
+
 	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
 		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
 		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
 		return h.postComment(ctx, pr, body)
-	}
-
-	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
-		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
-		return nil
 	}
 
 	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
