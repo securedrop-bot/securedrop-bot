@@ -1,0 +1,35 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: securedrop-bot
+spec:
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: securedrop-bot
+    spec:
+      containers:
+      - name: securedrop-bot
+        image: gcr.io/jen-personal/securedrop-bot
+        ports:
+        - containerPort: 8001
+        env:
+          - name: GITHUB_ACCESS_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: securedrop-bot-github
+                key: api_token
+        imagePullPolicy: Always
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: securedrop-bot-service
+spec:
+  selector:
+    app: securedrop-bot
+  ports:
+    - protocol: TCP
+      port: 8001
+  type: LoadBalancer
