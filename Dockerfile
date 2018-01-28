@@ -2,15 +2,13 @@ FROM golang
 
 ENV GOBIN /go/bin
 
-RUN mkdir /securedrop-bot
-RUN mkdir /go/src/securedrop-bot
-ADD . /go/src/securedrop-bot
-WORKDIR /go/src/securedrop-bot
+ADD . /go/src/github.com/tmc/securedrop-bot
+WORKDIR /go/src/github.com/tmc/securedrop-bot
 
 RUN go get -u github.com/govend/govend
 RUN govend -v
 
-RUN go install
+RUN go install cmd/securedrop-bot/main.go
 
 EXPOSE 8001
-ENTRYPOINT ["/go/src/securedrop-bot/cmd/securedrop-bot/securedrop-bot"]
+CMD ["/go/bin/main"]
