@@ -151,6 +151,16 @@ func prIsRecentlyReviewed() *pullRequestsServiceMock {
 		},
 	}
 }
+func prHasNoReviews() *pullRequestsServiceMock {
+	return &pullRequestsServiceMock{
+		ListReviewersFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.ListOptions) (*github.Reviewers, *github.Response, error) {
+			return genericReviewers, nil, nil
+		},
+		ListReviewsFunc: func(in1 context.Context, in2 string, in3 string, in4 int, in5 *github.ListOptions) ([]*github.PullRequestReview, *github.Response, error) {
+			return nil, nil, nil
+		},
+	}
+}
 
 func TestHandler_nagSubmitterIfFailed(t *testing.T) {
 	logger := logrus.New()
@@ -280,6 +290,10 @@ func TestHandler_nagReviewerIfSlow(t *testing.T) {
 			pullRequests: prIsNotApproved(),
 			issues:       botRecentlyCommentedIssues(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
+		{"bot-should-nag-reviewers", &fakeGithubClient{
+			pullRequests: prHasNoReviews(),
+			issues:       noRecentComments(),
+		}, args{ctx: ctx, pr: genericPullRequest}, 1, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
