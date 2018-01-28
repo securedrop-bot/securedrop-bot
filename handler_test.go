@@ -276,6 +276,10 @@ func TestHandler_nagReviewerIfSlow(t *testing.T) {
 			pullRequests: prIsNotApproved(),
 			issues:       reviewerRecentlyCommentedIssues(),
 		}, args{ctx: ctx, pr: genericPullRequest}, 1, false},
+		{"if-bot-recently-commented-do-not-nag", &fakeGithubClient{
+			pullRequests: prIsNotApproved(),
+			issues:       botRecentlyCommentedIssues(),
+		}, args{ctx: ctx, pr: genericPullRequest}, 0, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
