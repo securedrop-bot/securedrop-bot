@@ -15,11 +15,14 @@ import (
 	"github.com/pkg/errors"
 )
 
+var (
+	githubOwner = getEnv("SDBOT_REPO_OWNER", "securedrop-bot")
+	githubRepo  = getEnv("SDBOT_REPO_NAME", "securedrop-test")
+	botUsername = getEnv("SDBOT_USERNAME", "securedrop-bot")
+)
+
 const (
-	pollInterval = time.Minute       // TODO: parameterize
-	githubOwner  = "securedrop-bot"  // TODO: parameterize?
-	githubRepo   = "securedrop-test" // TODO: parameterize?
-	botUsername  = "securedrop-bot"  // yes also parameterize me too
+	pollInterval = time.Minute // TODO: parameterize
 
 	// TODO: come up with common structured way to represent thresholds for different policies
 	policyNagSubmitterThreshold               = 2 * time.Hour
@@ -173,14 +176,15 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return nil
 	}
 
-	// Get requested reviewers for PR
-	opt3 := &github.ListOptions{}
-	reviewers, _, err := h.client.GetPullRequestsService().ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt3)
+	reviewers, err := h.getReviewers(ctx, pr)
 	if err != nil {
-		return errors.Wrap(err, "issue getting PR reviewers")
+		return errors.Wrap(err, "issue getting reviewers")
 	}
 
 	reviews, err := h.getReviews(ctx, pr)
+	if err != nil {
+		return errors.Wrap(err, "issue getting reviews")
+	}
 	reviewerString := ""
 	for _, reviewer := range reviewers.Users {
 		reviewerString += "@"
@@ -222,15 +226,15 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 		return nil
 	}
 
+	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
+		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
+		return nil
+	}
+
 	if time.Since(lastTimeSubmitterCommented) > policyNagSubmitterReviewCommentsThreshold && time.Since(lastTimeSubmitterCommented) > time.Since(lastTimeReviewWasDoneByMaintainer) {
 		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "Let's ping the submitter since the ball is in their court and a review has been done.")
 		body := fmt.Sprintf("A review was posted by a maintainer. @%v, can you make the requested changes when you get a chance?", *pr.User.Login)
 		return h.postComment(ctx, pr, body)
-	}
-
-	if time.Since(lastTimeBotCommented) < policyNagReviewerThreshold {
-		logger.Debugln(pr.GetNumber(), pr.GetTitle(), "The bot has recently posted. Don't post again.")
-		return nil
 	}
 
 	logger.Debugln(pr.GetNumber(), pr.GetTitle(), "If we got here, then we can remind the reviewer.")
@@ -238,6 +242,7 @@ func (h *Handler) nagReviewerIfSlow(ctx context.Context, pr *github.PullRequest)
 	return h.postComment(ctx, pr, body)
 }
 
+// Post a comment on the PR.
 func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body string) error {
 	comment := &github.IssueComment{
 		Body: &body,
@@ -250,6 +255,7 @@ func (h *Handler) postComment(ctx context.Context, pr *github.PullRequest, body 
 	return nil
 }
 
+// Get reviews on the PR.
 func (h *Handler) getReviews(ctx context.Context, pr *github.PullRequest) ([]*github.PullRequestReview, error) {
 	opt := &github.ListOptions{}
 	reviews, _, err := h.client.GetPullRequestsService().ListReviews(ctx, githubOwner, githubRepo, pr.GetNumber(), opt)
@@ -267,4 +273,21 @@ func (h *Handler) getComments(ctx context.Context, pr *github.PullRequest) ([]*g
 		return comments, errors.Wrap(err, "issue getting PR comments")
 	}
 	return comments, nil
+}
+
+// Get requested reviewers on the PR.
+func (h *Handler) getReviewers(ctx context.Context, pr *github.PullRequest) (*github.Reviewers, error) {
+	opt := &github.ListOptions{}
+	reviewers, _, err := h.client.GetPullRequestsService().ListReviewers(ctx, githubOwner, githubRepo, pr.GetNumber(), opt)
+	if err != nil {
+		return reviewers, errors.Wrap(err, "issue getting PR reviewers")
+	}
+	return reviewers, nil
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
